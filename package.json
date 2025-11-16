@@ -16,7 +16,7 @@
     "prepublishOnly": "npm run build",
     "test": "echo \"No tests specified\" && exit 0",
     "lint": "echo \"No linter specified\"",
-    "version": "npm run build && git add -A dist",
+    "version": "npm run build",
     "prepack": "npm run build"
   },
   "keywords": [
