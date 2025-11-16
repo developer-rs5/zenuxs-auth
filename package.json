@@ -1,6 +1,6 @@
 {
   "name": "zenuxs-oauth",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Lightweight OAuth 2.0 client for Zenuxs authentication system",
   "main": "dist/zenux-oauth.cjs.js",
   "browser": "dist/zenux-oauth.min.js",
