@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OAuth Callback - Authentication</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 40px;
+            border-radius: 20px;
+            backdrop-filter: blur(15px);
+            text-align: center;
+            max-width: 500px;
+            width: 100%;
+            box-shadow: 0 8px 32px rgba(31, 38, 135, 0.37);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+        }
+        
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 4px solid white;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        h1 {
+            font-size: 1.8rem;
+            margin-bottom: 15px;
+            font-weight: 600;
+        }
+        
+        p {
+            margin-bottom: 10px;
+            opacity: 0.9;
+            line-height: 1.6;
+        }
+        
+        .success { color: #4ade80; }
+        .error { color: #f87171; }
+        .warning { color: #fbbf24; }
+        
+        .button {
+            background: white;
+            color: #667eea;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            margin: 10px 5px;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }
+        
+        .button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }
+        
+        .hidden { display: none; }
+        
+        .debug {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+            text-align: left;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .status-icon {
+            font-size: 3rem;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="loading">
+            <div class="spinner"></div>
+            <h1>Processing Authentication</h1>
+            <p>Please wait while we complete your login...</p>
+        </div>
+        
+        <div id="success" class="hidden">
+            <div class="status-icon">✓</div>
+            <h1 class="success">Authentication Successful</h1>
+            <p>You have been successfully authenticated.</p>
+            <p id="successMessage"></p>
+        </div>
+        
+        <div id="error" class="hidden">
+            <div class="status-icon">✗</div>
+            <h1 class="error">Authentication Failed</h1>
+            <p id="errorMessage"></p>
+            <div class="buttons">
+                <button class="button" onclick="retry()">Try Again</button>
+                <button class="button" onclick="closeWindow()">Close</button>
+            </div>
+        </div>
+        
+        <div id="debug" class="debug hidden"></div>
+    </div>
+    
+    <script>
+        // Configuration - Override these if needed
+        const CONFIG = {
+            debug: new URLSearchParams(window.location.search).get('debug') === 'true',
+            autoClose: true,
+            autoCloseDelay: 2000,
+            homeUrl: '/test.html',
+            storagePrefix: 'zenux_oauth_'
+        };
+
+        // State
+        let authData = null;
+
+        // Elements
+        const elements = {
+            loading: document.getElementById('loading'),
+            success: document.getElementById('success'),
+            error: document.getElementById('error'),
+            successMessage: document.getElementById('successMessage'),
+            errorMessage: document.getElementById('errorMessage'),
+            debug: document.getElementById('debug')
+        };
+
+        // Debug logging
+        function debugLog(message, data = null) {
+            if (!CONFIG.debug) return;
+            
+            const timestamp = new Date().toLocaleTimeString();
+            let logMessage = `[${timestamp}] ${message}`;
+            
+            if (data) {
+                logMessage += '\n' + JSON.stringify(data, null, 2);
+            }
+            
+            elements.debug.textContent += logMessage + '\n\n';
+            console.log('[OAuth Callback]', message, data);
+        }
+
+        // Show section
+        function showSection(section, message = '') {
+            Object.values(elements).forEach(el => {
+                if (el && el.classList) el.classList.add('hidden');
+            });
+            
+            if (section) section.classList.remove('hidden');
+            
+            if (CONFIG.debug) {
+                elements.debug.classList.remove('hidden');
+            }
+
+            if (message && elements.successMessage) {
+                elements.successMessage.textContent = message;
+            }
+        }
+
+        // Storage helpers
+        function getFromStorage(key) {
+            const locations = [
+                () => sessionStorage.getItem(CONFIG.storagePrefix + key),
+                () => localStorage.getItem(CONFIG.storagePrefix + key),
+                () => sessionStorage.getItem(key),
+                () => localStorage.getItem(key)
+            ];
+
+            for (const getter of locations) {
+                try {
+                    const value = getter();
+                    if (value) {
+                        debugLog(`Found ${key} in storage`);
+                        return value;
+                    }
+                } catch (e) {
+                    continue;
+                }
+            }
+
+            debugLog(`${key} not found in any storage location`, 'warn');
+            return null;
+        }
+
+        function clearFromStorage(key) {
+            try {
+                sessionStorage.removeItem(CONFIG.storagePrefix + key);
+                localStorage.removeItem(CONFIG.storagePrefix + key);
+                sessionStorage.removeItem(key);
+                localStorage.removeItem(key);
+            } catch (e) {
+                debugLog('Storage cleanup error', e);
+            }
+        }
+
+        // Get OAuth configuration
+        function getOAuthConfig() {
+            const urlParams = new URLSearchParams(window.location.search);
+            
+            // Try to get from parent window first (for popup mode)
+            let clientId = urlParams.get('client_id');
+            let authServer = urlParams.get('auth_server');
+            
+            if (!clientId && window.opener && window.opener.ZenuxOAuthInstance) {
+                clientId = window.opener.ZenuxOAuthInstance.config.clientId;
+                authServer = window.opener.ZenuxOAuthInstance.config.authServer;
+            }
+            
+            if (!clientId) {
+                clientId = getFromStorage('client_id');
+            }
+            
+            if (!authServer) {
+                authServer = getFromStorage('auth_server') || 'https://api.auth.zenuxs.in';
+            }
+            
+            return {
+                clientId: clientId,
+                authServer: authServer,
+                redirectUri: window.location.origin + window.location.pathname,
+                tokenEndpoint: '/oauth/token'
+            };
+        }
+        
+        // Get stored parameters with parent window fallback
+        function getStoredParameter(key) {
+            // First try local storage
+            let value = getFromStorage(key);
+            
+            // If not found and we have a parent window, try to get from parent
+            if (!value && window.opener && !window.opener.closed) {
+                try {
+                    // Try to access parent's ZenuxOAuth instance
+                    if (window.opener.ZenuxOAuthInstance) {
+                        const instance = window.opener.ZenuxOAuthInstance;
+                        switch(key) {
+                            case 'code_verifier':
+                                value = instance.session.codeVerifier;
+                                break;
+                            case 'state':
+                                value = instance.session.state;
+                                break;
+                            case 'nonce':
+                                value = instance.session.nonce;
+                                break;
+                        }
+                        
+                        if (value) {
+                            debugLog(`Retrieved ${key} from parent window`);
+                        }
+                    }
+                } catch (e) {
+                    debugLog(`Cannot access parent window: ${e.message}`);
+                }
+            }
+            
+            return value;
+        }
+
+        // Exchange authorization code for tokens
+        async function exchangeCode(code, codeVerifier, config) {
+            debugLog('Exchanging authorization code', {
+                codeLength: code?.length,
+                codeVerifierLength: codeVerifier?.length,
+                authServer: config.authServer
+            });
+
+            const tokenData = new URLSearchParams({
+                grant_type: 'authorization_code',
+                code: code,
+                redirect_uri: config.redirectUri,
+                client_id: config.clientId,
+                code_verifier: codeVerifier
+            });
+
+            const tokenUrl = `${config.authServer}${config.tokenEndpoint}`;
+            debugLog('Token request URL', tokenUrl);
+
+            const response = await fetch(tokenUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Accept': 'application/json'
+                },
+                body: tokenData
+            });
+
+            debugLog('Token response status', response.status);
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                let errorData;
+                
+                try {
+                    errorData = JSON.parse(errorText);
+                } catch {
+                    errorData = { error: 'unknown', description: errorText };
+                }
+
+                throw new Error(errorData.error_description || errorData.error || `HTTP ${response.status}`);
+            }
+
+            const tokens = await response.json();
+            debugLog('Token exchange successful');
+            
+            return tokens;
+        }
+
+        // Send message to parent window
+        function notifyParent(type, data) {
+            if (!window.opener || window.opener.closed) {
+                debugLog('No parent window to notify');
+                return false;
+            }
+
+            debugLog(`Sending message to parent: ${type}`, data);
+            
+            window.opener.postMessage({
+                type: `zenux_oauth_${type}`,
+                ...data,
+                timestamp: Date.now()
+            }, '*');
+
+            return true;
+        }
+
+        // Handle OAuth callback
+        async function handleCallback() {
+            try {
+                debugLog('Starting callback handler');
+
+                const urlParams = new URLSearchParams(window.location.search);
+                const code = urlParams.get('code');
+                const state = urlParams.get('state');
+                const error = urlParams.get('error');
+                const errorDescription = urlParams.get('error_description');
+
+                debugLog('URL parameters', {
+                    hasCode: !!code,
+                    hasState: !!state,
+                    error: error,
+                    errorDescription: errorDescription
+                });
+
+                // Handle OAuth errors
+                if (error) {
+                    const errorMsg = errorDescription || error || 'Authentication failed';
+                    debugLog('OAuth error received', { error, errorDescription });
+                    
+                    notifyParent('error', {
+                        error: error,
+                        error_description: errorDescription,
+                        code: 'OAUTH_ERROR'
+                    });
+
+                    throw new Error(errorMsg);
+                }
+
+                if (!code) {
+                    throw new Error('No authorization code received');
+                }
+
+                // Get stored parameters
+                const codeVerifier = getFromStorage('code_verifier');
+                const storedState = getFromStorage('state');
+                const config = getOAuthConfig();
+
+                debugLog('Retrieved configuration', {
+                    hasCodeVerifier: !!codeVerifier,
+                    hasStoredState: !!storedState,
+                    clientId: config.clientId,
+                    authServer: config.authServer
+                });
+
+                // Validate state
+                if (storedState && state !== storedState) {
+                    debugLog('State mismatch', { received: state, stored: storedState });
+                    throw new Error('State validation failed - possible security issue');
+                }
+
+                if (!codeVerifier) {
+                    debugLog('No code verifier found');
+                    throw new Error('PKCE code verifier not found. Please restart authentication.');
+                }
+
+                if (!config.clientId) {
+                    throw new Error('Client ID not found');
+                }
+
+                // Exchange code for tokens
+                const tokens = await exchangeCode(code, codeVerifier, config);
+                
+                authData = { tokens, config };
+
+                // Clean up storage
+                clearFromStorage('code_verifier');
+                clearFromStorage('state');
+                clearFromStorage('nonce');
+                clearFromStorage('csrf_token');
+
+                // Store tokens
+                try {
+                    sessionStorage.setItem(CONFIG.storagePrefix + 'tokens', JSON.stringify(tokens));
+                } catch (e) {
+                    debugLog('Failed to store tokens', e);
+                }
+
+                // Notify parent window
+                const parentNotified = notifyParent('success', { tokens });
+
+                if (parentNotified && CONFIG.autoClose) {
+                    showSection(elements.success, 'This window will close automatically.');
+                    setTimeout(() => {
+                        window.close();
+                    }, CONFIG.autoCloseDelay);
+                } else {
+                    showSection(elements.success, 'Authentication complete. You can close this window.');
+                    
+                    // If not in popup, redirect to home
+                    if (!window.opener) {
+                        setTimeout(() => {
+                            window.location.href = CONFIG.homeUrl;
+                        }, CONFIG.autoCloseDelay);
+                    }
+                }
+
+            } catch (error) {
+                debugLog('Callback error', error);
+                
+                elements.errorMessage.textContent = error.message;
+                showSection(elements.error);
+
+                notifyParent('error', {
+                    error: error.message,
+                    code: 'CALLBACK_ERROR'
+                });
+            }
+        }
+
+        // Retry authentication
+        function retry() {
+            clearFromStorage('code_verifier');
+            clearFromStorage('state');
+            window.location.href = CONFIG.homeUrl;
+        }
+
+        // Close window
+        function closeWindow() {
+            if (window.opener) {
+                window.close();
+            } else {
+                window.location.href = CONFIG.homeUrl;
+            }
+        }
+
+        // Initialize
+        window.addEventListener('load', () => {
+            debugLog('Callback page loaded');
+            handleCallback();
+        });
+
+        // Handle messages from parent (if needed)
+        window.addEventListener('message', (event) => {
+            debugLog('Message received from parent', event.data);
+        });
+    </script>
+</body>
+</html>

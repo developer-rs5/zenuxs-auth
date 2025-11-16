@@ -1,0 +1,53 @@
+{
+  "name": "zenuxs-oauth",
+  "version": "1.0.3",
+  "description": "Lightweight OAuth 2.0 client for Zenuxs authentication system",
+  "main": "dist/zenux-oauth.cjs.js",
+  "browser": "dist/zenux-oauth.min.js",
+  "module": "dist/zenux-oauth.esm.js",
+  "types": "dist/zenux-oauth.d.ts",
+  "files": [
+    "dist/**/*",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node build.js",
+    "build:dev": "NODE_ENV=development node build.js",
+    "prepublishOnly": "npm run build",
+    "test": "echo \"No tests specified\" && exit 0",
+    "lint": "echo \"No linter specified\"",
+    "version": "npm run build && git add -A dist",
+    "prepack": "npm run build"
+  },
+  "keywords": [
+    "oauth",
+    "oauth2",
+    "authentication",
+    "zenux",
+    "pkce",
+    "openid",
+    "sso",
+    "auth",
+    "login"
+  ],
+  "author": {
+    "name": "Zenuxs Team",
+    "email": "mail@zenuxs.in",
+    "url": "https://zenuxs.in"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/developer-rs5/zenuxs-oauth.git"
+  },
+  "bugs": {
+    "url": "https://github.com/developer-rs5/zenuxs-oauth/issues"
+  },
+  "homepage": "https://github.com/developer-rs5/zenuxs-oauth#readme",
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "devDependencies": {
+    "uglify-js": "^3.17.4"
+  }
+}
