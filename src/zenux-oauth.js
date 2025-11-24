@@ -50,15 +50,11 @@ class ZenuxOAuth {
         let defaultFetch = null;
         if (typeof fetch !== 'undefined') {
             defaultFetch = Environment.isBrowser ? fetch.bind(window) : fetch;
-        } else if (Environment.isNode) {
-            try {
-                defaultFetch = require('node-fetch');
-            } catch (e) {
-                throw new ZenuxOAuthError(
-                    'Fetch is not available. Please install node-fetch or provide a fetchFunction',
-                    'FETCH_UNAVAILABLE'
-                );
-            }
+        } else {
+            throw new ZenuxOAuthError(
+                'Fetch is not available in this environment. Please provide a fetchFunction',
+                'FETCH_UNAVAILABLE'
+            );
         }
 
         this.config = {
@@ -120,27 +116,6 @@ class ZenuxOAuth {
         }
     }
 
-    init() {
-        this.debugLog('Initializing ZenuxOAuth', {
-            config: { ...this.config, fetchFunction: typeof this.config.fetchFunction },
-            environment: Environment.getEnvironment()
-        });
-        
-        this.loadTokens();
-
-        if (this.config.autoRefresh && Environment.isBrowser && !Environment.isReactNative) {
-            this.setupAutoRefresh();
-        }
-
-        if (Environment.isBrowser && typeof document !== 'undefined') {
-            document.addEventListener('visibilitychange', () => {
-                if (!document.hidden && this.isAuthenticated()) {
-                    this.checkAndRefreshToken();
-                }
-            });
-        }
-    }
-
     validateConfig(config) {
         const errors = [];
 
@@ -168,8 +143,8 @@ class ZenuxOAuth {
             errors.push('refreshThreshold must be between 0 and 3600 seconds');
         }
 
-        if (!config.fetchFunction && typeof fetch === 'undefined' && Environment.isNode) {
-            errors.push('fetchFunction is required in Node.js environment. Please install node-fetch or provide a fetch implementation');
+        if (!config.fetchFunction && typeof fetch === 'undefined') {
+            errors.push('fetchFunction is required as fetch is not available in this environment');
         }
 
         if (errors.length > 0) {
@@ -243,14 +218,16 @@ class ZenuxOAuth {
         const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
         
         if (Environment.isNode) {
-            const crypto = require('crypto');
-            return crypto.randomBytes(length)
-                .toString('base64')
-                .replace(/[+/=]/g, '')
-                .slice(0, length)
-                .split('')
-                .map(char => charset.charAt(char.charCodeAt(0) % charset.length))
-                .join('');
+            // Use crypto module in Node.js
+            if (typeof crypto !== 'undefined' && crypto.randomBytes) {
+                return crypto.randomBytes(length)
+                    .toString('base64')
+                    .replace(/[+/=]/g, '')
+                    .slice(0, length)
+                    .split('')
+                    .map(char => charset.charAt(char.charCodeAt(0) % charset.length))
+                    .join('');
+            }
         }
 
         if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
@@ -268,30 +245,33 @@ class ZenuxOAuth {
     }
 
     async sha256(plain) {
-    // Browser environment - use Web Crypto API
-    if (typeof crypto !== 'undefined' && crypto.subtle) {
-        const encoder = new TextEncoder();
-        const data = encoder.encode(plain);
-        const hash = await crypto.subtle.digest('SHA-256', data);
-        return btoa(String.fromCharCode(...new Uint8Array(hash)))
-            .replace(/\+/g, '-')
-            .replace(/\//g, '_')
-            .replace(/=/g, '');
-    }
-    
-    // Node.js environment - use dynamic import to avoid bundling issues
-    if (typeof process !== 'undefined' && process.versions && process.versions.node) {
-        // Use dynamic import to prevent Vite from trying to bundle crypto
-        const crypto = await import('crypto');
-        const hash = crypto.createHash('sha256').update(plain).digest('base64');
-        return hash.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-    }
+        // Browser environment - use Web Crypto API
+        if (typeof crypto !== 'undefined' && crypto.subtle) {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(plain);
+            const hash = await crypto.subtle.digest('SHA-256', data);
+            return btoa(String.fromCharCode(...new Uint8Array(hash)))
+                .replace(/\+/g, '-')
+                .replace(/\//g, '_')
+                .replace(/=/g, '');
+        }
+        
+        // Node.js environment with Web Crypto API (Node 15+)
+        if (Environment.isNode && typeof crypto !== 'undefined' && crypto.subtle) {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(plain);
+            const hash = await crypto.subtle.digest('SHA-256', data);
+            return Buffer.from(hash).toString('base64')
+                .replace(/\+/g, '-')
+                .replace(/\//g, '_')
+                .replace(/=/g, '');
+        }
 
-    throw new ZenuxOAuthError(
-        'SHA-256 not supported in this environment',
-        'CRYPTO_NOT_SUPPORTED'
-    );
-}
+        throw new ZenuxOAuthError(
+            'SHA-256 not supported in this environment. Web Crypto API is required.',
+            'CRYPTO_NOT_SUPPORTED'
+        );
+    }
 
     async login(options = {}) {
         try {
@@ -941,7 +921,7 @@ class ZenuxOAuth {
             const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
             
             let jsonPayload;
-            if (Environment.isNode) {
+            if (Environment.isNode && typeof Buffer !== 'undefined') {
                 const buffer = Buffer.from(base64, 'base64');
                 jsonPayload = buffer.toString('utf8');
             } else {
@@ -1582,7 +1562,7 @@ ZenuxOAuth.destroyInstance = function() {
 };
 
 ZenuxOAuth.Error = ZenuxOAuthError; 
-ZenuxOAuth.VERSION = '2.2.0';
+ZenuxOAuth.VERSION = '2.3.0';
 ZenuxOAuth.Environment = Environment;
 
 // ==================== AUTO-INITIALIZATION ====================
