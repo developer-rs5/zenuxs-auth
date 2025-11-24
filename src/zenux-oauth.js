@@ -109,11 +109,27 @@ class ZenuxOAuth {
         this._refreshInterval = null;
         this._pendingRequests = new Map();
 
+        // Fixed: Added the missing init method
         this.init();
 
         if (Environment.isBrowser && !Environment.isReactNative) {
             window.ZenuxOAuthInstance = this;
         }
+    }
+
+    // Fixed: Added the missing init method
+    init() {
+        this.debugLog('Initializing ZenuxOAuth');
+        this.setupAutoRefresh();
+        
+        // Load any existing tokens from storage
+        this.loadTokens();
+        
+        this.debugLog('ZenuxOAuth initialized successfully', {
+            environment: Environment.getEnvironment(),
+            clientId: this.config.clientId,
+            authServer: this.config.authServer
+        });
     }
 
     validateConfig(config) {
