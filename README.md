@@ -2,6 +2,7 @@
 
 > Universal OAuth 2.0 + PKCE Client for Modern Applications
 
+
 [![npm version](https://img.shields.io/npm/v/zenuxs-oauth.svg)](https://www.npmjs.com/package/zenuxs-oauth)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Bundle Size](https://img.shields.io/bundlephobia/minzip/zenuxs-oauth)](https://bundlephobia.com/package/zenuxs-oauth)
